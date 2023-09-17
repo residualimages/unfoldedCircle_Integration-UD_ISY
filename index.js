@@ -235,10 +235,6 @@ class IntegrationAPI extends EventEmitter {
   }
 
   /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  async #sendOkResult(wsId, id, msgData = {}) {
-    await this.#sendResponse(wsId, id, "result", msgData, 200);
-  }
-
   async #sendErrorResult(wsId, id, statusCode = 500, msgData = {}) {
     await this.#sendResponse(wsId, id, "result", msgData, statusCode);
   }
@@ -340,9 +336,7 @@ class IntegrationAPI extends EventEmitter {
           break;
 
         case uc.MESSAGES.GET_AVAILABLE_ENTITIES:
-          await this.#sendResponse(wsId, id, uc.MSG_EVENTS.AVAILABLE_ENTITIES, {
-            available_entities: this.#getAvailableEntities()
-          });
+          await this.#getAvailableEntities(wsId, id);
           break;
 
         case uc.MESSAGES.GET_ENTITY_STATES:
@@ -354,13 +348,11 @@ class IntegrationAPI extends EventEmitter {
           break;
 
         case uc.MESSAGES.SUBSCRIBE_EVENTS:
-          await this.#subscribeEvents(msgData);
-          await this.#sendOkResult(wsId, id);
+          await this.#subscribeEvents(wsId, id, msgData);
           break;
 
         case uc.MESSAGES.UNSUBSCRIBE_EVENTS:
-          await this.#unSubscribeEvents(msgData);
-          await this.#sendOkResult(wsId, id);
+          await this.#unSubscribeEvents(wsId, id, msgData);
           break;
 
         case uc.MESSAGES.GET_DRIVER_METADATA:
@@ -428,41 +420,19 @@ class IntegrationAPI extends EventEmitter {
     };
   }
 
-  #getAvailableEntities() {
-    // return list of entities
-    return this.availableEntities.getEntities();
+  #getAvailableEntities(wsId, reqId) {
+    const wsHandle = { wsId, reqId };
+    this.emit(uc.EVENTS.GET_AVAILABLE_ENTITIES, wsHandle);
   }
 
-  async #subscribeEvents(entities) {
-    entities.entity_ids.forEach((entityId) => {
-      const entity = this.availableEntities.getEntity(entityId);
-      if (entity) {
-        this.configuredEntities.addEntity(entity);
-      } else {
-        console.log(`WARN: cannot subscribe entity '${entityId}': entity is not available`);
-      }
-    });
-
-    this.configuredEntities.saveData();
-
-    this.emit(uc.EVENTS.SUBSCRIBE_ENTITIES, entities.entity_ids);
+  async #subscribeEvents(wsId, reqId, entities) {
+    const wsHandle = { wsId, reqId };
+    this.emit(uc.EVENTS.SUBSCRIBE_ENTITIES, wsHandle, entities.entity_ids);
   }
 
-  async #unSubscribeEvents(entities) {
-    // remove entities from registered entities
-    let res = true;
-
-    entities.entity_ids.forEach((entityId) => {
-      if (!this.configuredEntities.removeEntity(entityId)) {
-        res = false;
-      }
-    });
-
-    this.configuredEntities.saveData();
-
-    this.emit(uc.EVENTS.UNSUBSCRIBE_ENTITIES, entities.entity_ids);
-
-    return res;
+  async #unSubscribeEvents(wsId, reqId, entities) {
+    const wsHandle = { wsId, reqId };
+    this.emit(uc.EVENTS.UNSUBSCRIBE_ENTITIES, wsHandle, entities.entity_ids);
   }
 
   #getEntityStates() {
@@ -503,6 +473,12 @@ class IntegrationAPI extends EventEmitter {
         driver: this.#driverInfo.version
       }
     };
+  }
+
+  async sendAvailableEntities(wsHandle) {
+    await this.#sendResponse(wsHandle.wsId, wsHandle.reqId, uc.MSG_EVENTS.AVAILABLE_ENTITIES, {
+      available_entities: this.availableEntities.getEntities()
+    });
   }
 
   async setDeviceState(state) {
